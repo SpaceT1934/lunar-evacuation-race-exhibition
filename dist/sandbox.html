@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Moonfall · 月球撤离赛</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./sandbox/style.css" />
+    <link rel="stylesheet" href="./sandbox/instrument.css" />
+    <script>
+      if (new URLSearchParams(location.search).has('floor'))
+        location.replace(
+          'floor.html' + (new URLSearchParams(location.search).has('debug') ? '?debug=1' : ''),
+        );
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+    <script type="module" src="./sandbox/app.js"></script>
+  </head>
+  <body class="exhibition">
+    <header class="top">
+      <a class="brand" href="./sandbox.html"
+        ><span class="brandmark">M</span> MOONFALL <small>月球撤离赛</small></a
+      >
+      <div class="clock">
+        <span id="status">待机</span><strong id="time">00:00.00</strong
+        ><small>比赛时钟 · <span id="speed-label">1×</span></small>
+      </div>
+      <span class="badge" id="mode">连接中</span
+      ><span id="connection" class="connection">本地服务连接中…</span
+      ><a href="./floor.html" target="_blank">打开行驶屏 ↗</a
+      ><a href="./floor.html?debug=1" target="_blank">坐标检查 ↗</a>
+    </header>
+    <iframe id="reader-summary" title="手机刷卡连接状态和双方最近出牌" hidden></iframe>
+    <main>
+      <div id="notice" class="notice">
+        当前为理想运动模拟。屏面 59.8 × 33.6 cm，车体 6 × 6 cm；实车参数须由硬件端验证。
+      </div>
+      <div class="workspace">
+        <section class="scene-column">
+          <section class="panel panorama-panel">
+            <div class="panel-head">
+              <h2>完整基地地图</h2>
+              <span>与行驶屏共用比赛状态</span>
+            </div>
+            <div id="control-arena">
+              <canvas id="control-map" aria-label="完整月球基地与两辆机器人"></canvas>
+              <div class="camera-tools">
+                <button data-view="overview">全图</button><button data-view="game">跟随</button
+                ><button data-view="top">俯视</button>
+              </div>
+              <div id="world-notice" role="status"></div>
+            </div>
+          </section>
+          <details class="physical-inspector">
+            <summary>展开厘米坐标与车体包络检查</summary>
+            <div class="panel map-panel">
+              <div class="panel-head">
+                <h2>行驶屏坐标预览</h2>
+                <span>原点左上角 · cm</span
+                ><label><input type="checkbox" id="envelopes" checked /> 车体包络</label>
+              </div>
+              <div id="board-wrap">
+                <svg
+                  id="board"
+                  viewBox="0 0 59.8 33.6"
+                  preserveAspectRatio="xMidYMid meet"
+                  role="img"
+                  aria-label="59.8×33.6 厘米双车道实体赛道"
+                ></svg>
+              </div>
+              <div class="map-footer">
+                <span>0° →　90° ↓　−180° ←</span><span>实线：锁定路线　虚线：已准备分支</span
+                ><span>59.8 × 33.6 cm</span>
+              </div>
+            </div>
+          </details>
+          <div id="rosters" class="rosters"></div>
+          <div class="panel timeline">
+            <div class="panel-head">
+              <h2>连续赛程</h2>
+              <span>展示进度不参与定位与判胜</span>
+            </div>
+            <div id="progress"></div>
+          </div>
+          <div class="panel events">
+            <div class="panel-head">
+              <h2>事件记录</h2>
+              <a href="/api/trace" download="moonfall-session.json">导出本局消息 ↓</a>
+            </div>
+            <div id="events"></div>
+          </div>
+        </section>
+        <aside>
+          <section class="panel console">
+            <div class="panel-head">
+              <h2>联调控制</h2>
+              <span id="authority">主控</span>
+            </div>
+            <div id="nfc-start" hidden>
+              <p><a id="nfc-reader" target="_blank" rel="noopener">手机 NFC 连接地址 ↗</a></p>
+              <p id="nfc-progress" role="status"></p>
+              <p id="nfc-instructions"></p>
+            </div>
+            <button class="quick-start-primary" data-quick-start>▶ 一键开局</button>
+            <p class="quick-start-hint">自动配置并发车，成功后返回赛场</p>
+            <ol class="steps">
+              <li>配置地图，核对标定与双车定位</li>
+              <li>选择开局路线，启动三段比赛</li>
+              <li>投石 / 月震选路，观察硬件回执</li>
+            </ol>
+            <div class="button-pair">
+              <button data-action="configure" id="configure">① 配置地图</button
+              ><button class="primary" data-action="start" id="start">② 双车发车</button>
+            </div>
+            <div class="button-pair">
+              <button data-action="pause" id="pause">暂停</button
+              ><button data-action="stop" class="danger" id="stop">停止双车</button>
+            </div>
+            <div class="button-pair">
+              <button data-action="query" id="query">查询停机快照</button
+              ><button data-action="resume" id="resume">确认恢复</button>
+            </div>
+            <button class="wide subtle" data-action="reset" id="reset">重置新一局</button>
+          </section>
+          <section class="panel choices" id="venue-choices">
+            <div class="panel-head">
+              <h2>玩家操作</h2>
+              <span id="choice-window">等待月震</span>
+            </div>
+            <div id="players"></div>
+          </section>
+          <section class="panel debug" id="simulation-tools">
+            <div class="panel-head">
+              <h2>模拟测试</h2>
+              <span>不连接电机</span>
+            </div>
+            <div class="field">
+              <label for="speed">模拟时钟</label
+              ><select id="speed">
+                <option value="1">1× 实时</option>
+                <option value="4">4× 加速</option>
+                <option value="8">8× 加速</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="aftershock">本局余震</label
+              ><select id="aftershock">
+                <option value="random">50% 随机</option>
+                <option value="stable">固定稳定</option>
+                <option value="collapse">固定塌陷</option>
+              </select>
+            </div>
+            <div class="inject">
+              <button data-inject="drop_pose">蓝车丢定位</button
+              ><button data-inject="invalid_pose">无效定位</button
+              ><button data-inject="reject_next_route">拒绝下一路线</button
+              ><button data-inject="drop_results">丢失执行回执</button>
+            </div>
+            <button data-inject="clear" class="wide subtle">清除模拟故障</button>
+            <p class="hint">
+              恢复顺序：清除故障 → 查询快照 → 确认恢复。结果未知或状态不一致时保持停机。
+            </p>
+          </section>
+          <section class="panel link-info">
+            <div class="panel-head">
+              <h2>接口状态</h2>
+              <a href="/api/map" target="_blank">路线 JSON ↗</a>
+            </div>
+            <dl id="link-info"></dl>
+            <details>
+              <summary>最近命令与回执</summary>
+              <div id="commands"></div>
+            </details>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <div class="venue-hud" aria-label="比赛信息">
+      <time id="venue-time" hidden>00:00</time>
+      <div id="venue-phase" hidden></div>
+      <section id="race-announcement" aria-live="polite" hidden>
+        <strong id="announcement-title"></strong><span id="announcement-detail"></span>
+      </section>
+      <section id="venue-result" aria-live="polite" hidden>
+        <span class="result-eyebrow">撤离任务完成</span>
+        <h1 id="result-title"></h1>
+        <p id="result-detail"></p>
+        <p id="result-times"></p>
+      </section>
+    </div>
+    <nav class="venue-tools" aria-label="展示设置">
+      <button class="quick-start-primary" data-quick-start>▶ 一键开局</button>
+      <button
+        id="venue-fullscreen"
+        class="venue-icon"
+        data-tooltip="全屏"
+        title="全屏 / 退出全屏（F）"
+        aria-label="全屏 / 退出全屏"
+      >
+        ⛶
+      </button>
+      <button
+        id="admin-toggle"
+        class="venue-icon"
+        data-tooltip="管理设置"
+        title="管理设置（A）"
+        aria-label="管理设置"
+        aria-pressed="false"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M9 4v6M15 14v6" /></svg>
+      </button>
+      <a
+        class="venue-floor-link"
+        href="./floor.html"
+        target="_blank"
+        rel="noopener"
+        title="在新窗口打开行驶屏"
+        >行驶屏 ↗</a
+      >
+    </nav>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <div class="floor-tools">
+      <button id="fullscreen">进入全屏</button><span id="floor-status">只读行驶屏 · 等待状态</span>
+    </div>
+  </body>
+</html>

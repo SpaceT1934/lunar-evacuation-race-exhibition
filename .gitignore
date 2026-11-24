@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+*.log
+work/
+*.blend1
+
+# Machine calibration and browser test artifacts
+config/*.local.json
+sandbox/hardware-profile.local.json
+.playwright-cli/
+
+# Blender recipe Python cache
+__pycache__/
