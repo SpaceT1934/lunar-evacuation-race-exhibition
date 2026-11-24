@@ -334,19 +334,41 @@ function render() {
   $('speed-label').textContent = `${s.speed}×`;
   $('connection').textContent = s.connected
     ? s.handshake
-      ? s.mode === 'simulation'
-        ? '模拟器在线 · 未接入实车'
-        : '硬件握手完成 · 本地服务在线'
+      ? s.straight_live
+        ? '实车与虚拟赛场联调 · 分段等待停稳回执'
+        : s.mode === 'simulation'
+          ? '模拟器在线 · 未接入实车'
+          : '硬件握手完成 · 本地服务在线'
       : '等待硬件握手'
     : '等待外部硬件连接';
   $('connection').classList.toggle('live', s.connected && s.handshake);
   $('floor-status').textContent =
     `${labels[s.status]} · ${s.calibration_id || '未标定'} · ${time(s.elapsed_ms)}`;
   if (floor) return;
+  const modeButton = $('straight-mode');
+  modeButton.hidden = !s.straight_available;
+  modeButton.textContent = s.straight_live ? '只跑虚拟车' : '切回实车联调';
+  modeButton.disabled =
+    !controller ||
+    (!(s.straight_live && s.status === 'paused') &&
+      !['idle', 'finished', 'stopped'].includes(s.status));
+  modeButton.onclick = () => send('straight.mode', { live: !s.straight_live });
+  $('straight-live').hidden = !s.straight_live;
+  if (s.straight_live) {
+    const live = s.straight_live;
+    $('mode').textContent = '双车实车联调';
+    $('straight-arm').disabled = !controller || live.checking || s.status !== 'idle';
+    $('straight-ready').textContent = live.checking
+      ? '正在检查定位和轮速…'
+      : live.ready
+        ? '实车已就绪，可以刷牌'
+        : '把两台车放回左侧起点，车头朝右，再检查双车';
+  }
   if (s.nfc_choices) {
     $('nfc-start').hidden = false;
-    $('nfc-instructions').textContent =
-      s.mode === 'simulation'
+    $('nfc-instructions').textContent = s.straight_live
+      ? '双车检查通过后刷四张路线牌，实车与大屏同时发车。每段实车停稳后自动换段。'
+      : s.mode === 'simulation'
         ? '刷齐四张路线牌后自动发车。发车后每方可刷一次天降陨石，或点击投放按钮。落石预警 2 秒后生效。'
         : '每位玩家刷一张开局路线牌和一张末段路线牌。刷齐后，由工作人员配置地图并点击双车发车。';
     const slots = ROBOTS.map((id) => {
@@ -453,15 +475,19 @@ function render() {
   }
   const enabled = {
     configure: s.status === 'idle' && s.handshake && s.clock,
-    start: s.status === 'idle' && s.configured && (!s.nfc_choices || s.nfc_ready),
+    start:
+      s.status === 'idle' &&
+      s.configured &&
+      (!s.nfc_choices || s.nfc_ready) &&
+      (!s.straight_live || s.straight_live.ready),
     pause: ['running', 'starting'].includes(s.status),
     stop: !['stopped', 'stopping'].includes(s.status),
     query: s.connected,
-    resume: s.status === 'paused' && s.snapshot_ok,
+    resume: s.status === 'paused' && s.snapshot_ok && !s.straight_live,
     reset: ['idle', 'stopped', 'finished'].includes(s.status),
   };
   for (const [id, ok] of Object.entries(enabled)) $(id).disabled = !controller || !ok;
-  $('simulation-tools').hidden = s.mode !== 'simulation';
+  $('simulation-tools').hidden = s.mode !== 'simulation' || !!s.straight_live;
   $('aftershock').disabled = !controller || s.status !== 'idle';
   $('speed').disabled = !controller;
   document.querySelectorAll('[data-inject]').forEach((b) => (b.disabled = !controller));

@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Sandbox } from './engine.mjs';
 import { createPhoneGateway } from './phone-gateway.mjs';
 import { HardwareSimulator } from './simulator.mjs';
+import { StraightMatch } from '../hardware/executor/straight-match.mjs';
 import { manifest } from '../dist/sandbox/geometry.js';
 
 import { parseOptions, HELP } from './options.mjs';
@@ -31,6 +32,9 @@ try {
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const { port, host, mode } = options;
 const nfcStart = process.env.MOONFALL_NFC_START === '1';
+const straightAvailable =
+  mode === 'simulation' && nfcStart && process.env.MOONFALL_STRAIGHT_LIVE === '1';
+let straightLive = straightAvailable;
 const phonePort = nfcStart ? port + 2 : null;
 let phoneGateway;
 let hardware = null,
@@ -42,14 +46,26 @@ const game = new Sandbox({
   mode,
   profile,
   nfcStart,
+  canAutoStart: () => !straightLive || simulator?.ready,
   send: (m) => {
     phoneGateway?.receive(m);
+    if (straightLive && ['robot.pause', 'robot.stop'].includes(m.type)) simulator?.cancel();
     if (simulator) queue.push(() => simulator.receive(m));
     else if (hardware?.readyState === WebSocket.OPEN) hardware.send(JSON.stringify(m));
   },
 });
+const snapshot = () => ({
+  ...game.state(),
+  straight_available: straightAvailable,
+  straight_live: straightLive ? { ready: simulator.ready, checking: simulator.checking } : null,
+});
 function setupSimulator() {
-  simulator = new HardwareSimulator((m) => queue.push(() => game.receive(m)));
+  const receive = (m) => queue.push(() => game.receive(m));
+  simulator = straightLive
+    ? new StraightMatch(receive, process.env.CAMERA_PYTHON || 'python3', (reason) =>
+        game.pause(reason),
+      )
+    : new HardwareSimulator(receive);
   game.connect();
   drain();
 }
@@ -90,7 +106,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === '/api/state') {
-      json(res, game.state());
+      json(res, snapshot());
       return;
     }
     if (url.pathname === '/api/map') {
@@ -178,14 +194,35 @@ sockets.on('connection', (ws, req) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value));
   };
   send({ type: 'welcome', controller: ws.isController, mode, phonePort });
-  send({ type: 'state', ...game.state(), speed });
-  ws.on('message', (raw) => {
+  send({ type: 'state', ...snapshot(), speed });
+  ws.on('message', async (raw) => {
     try {
       advanceExternalClock();
       if (!ws.isController) throw Error('当前窗口只读；请使用主控制窗口');
       const m = JSON.parse(raw.toString()),
         p = m.payload || {};
       switch (m.action) {
+        case 'straight.mode': {
+          if (!straightAvailable || typeof p.live !== 'boolean')
+            throw Error('当前服务不支持切换联调模式');
+          if (p.live === straightLive) break;
+          if (game.status === 'paused' && !p.live) {
+            game.stop();
+            drain();
+          }
+          if (!['idle', 'finished', 'stopped'].includes(game.status))
+            throw Error('请等本局结束或停止双车后切换模式');
+          if (straightLive) simulator.cancel();
+          game.reset();
+          straightLive = p.live;
+          speed = 1;
+          setupSimulator();
+          break;
+        }
+        case 'straight.arm':
+          if (!straightLive || game.status !== 'idle') throw Error('只能待机时检查实车');
+          await simulator.arm();
+          break;
         case 'configure':
           game.configure();
           break;
@@ -193,6 +230,7 @@ sockets.on('connection', (ws, req) => {
           game.chooseOpening(p.robot_id, p.choice);
           break;
         case 'start':
+          if (straightLive && !simulator.ready) throw Error('请先检查双车摆位');
           game.start();
           break;
         case 'final':
@@ -208,6 +246,7 @@ sockets.on('connection', (ws, req) => {
           game.query();
           break;
         case 'resume':
+          if (straightLive) throw Error('实车联调暂停后，请停止并重置本局');
           game.resume();
           break;
         case 'stop':
@@ -216,6 +255,7 @@ sockets.on('connection', (ws, req) => {
         case 'reset':
           if (!['idle', 'finished', 'stopped'].includes(game.status))
             throw Error('重置前须停止并收到停稳回执');
+          if (straightLive) simulator.cancel();
           game.reset();
           if (mode === 'simulation') setupSimulator();
           else if (hardware) {
@@ -223,7 +263,8 @@ sockets.on('connection', (ws, req) => {
           }
           break;
         case 'speed':
-          if (!simulator || ![1, 4, 8].includes(p.value)) throw Error('仅内置模拟支持时间加速');
+          if (!simulator || straightLive || ![1, 4, 8].includes(p.value))
+            throw Error('仅独立模拟支持时间加速');
           speed = p.value;
           break;
         case 'aftershock':
@@ -256,6 +297,7 @@ sockets.on('connection', (ws, req) => {
   ws.on('close', () => {
     if (controller === ws) {
       controller = null;
+      if (straightLive) simulator.cancel();
       game.pause('主控制窗口断开，等待工作人员核对');
       drain();
     }
@@ -290,7 +332,7 @@ const timer = setInterval(() => {
   }
   if (now - lastBroadcast >= 50) {
     lastBroadcast = now;
-    const msg = JSON.stringify({ type: 'state', ...game.state(), speed });
+    const msg = JSON.stringify({ type: 'state', ...snapshot(), speed });
     for (const ws of sockets.clients)
       if (ws.isUI && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 500000) ws.send(msg);
   }
@@ -301,6 +343,7 @@ if (nfcStart)
     game,
     drain,
     advance: advanceExternalClock,
+    canScan: () => !straightLive || simulator.ready,
     port: phonePort,
   });
 server.on('error', (error) => {
@@ -331,6 +374,7 @@ Ctrl+C 停止服务
 `),
 );
 function shutdown() {
+  if (straightLive) simulator.cancel();
   phoneGateway?.server.close();
   phoneGateway?.server.closeAllConnections();
   game.stop();

@@ -91,4 +91,27 @@ npm run executor -- ws://127.0.0.1:4264/hardware
 
 在这套固定 NFC 路线中，给执行器添加 `--right-angle` 可按原始拐点逐段行驶。车辆到达中间拐点后先停稳，原地对齐下一段方向，再继续直行。每局仍在两处阶段交接点做 180° 回转。实车模式把 `--right-angle` 放在 `--live` 前。
 
+### 两台实车的固定直行与掉头
+
+`hardware/executor/straight-turn.py` 可分别测试两台实车。蓝车使用 `--rover blue`、`192.168.116.40` 和标签 ID 1，黄车使用 `--rover gold`、`192.168.116.122` 和标签 ID 0。场地标签按左上、右上、右下、左下放置 ID 5、6、7、4。相机服务使用本机 `4182`，运行脚本的 Python 需要 OpenCV（含 `cv2.aruco`）和 NumPy。把要测的车放在对应车道左侧起步区，车头朝右。
+
+```sh
+python3 hardware/executor/straight-turn.py --rover blue --check
+python3 hardware/executor/straight-turn.py --rover blue
+python3 hardware/executor/straight-turn.py --rover gold --check
+python3 hardware/executor/straight-turn.py --rover gold
+```
+
+`--check` 只读取定位和轮速。正式运行时，选定车辆向右直行 47.8 cm，到点停稳，再原地掉头 180°，确认左右轮归零和车头到位后结束。
+
+### 四张路线牌与双实车联调
+
+保持本机相机服务在 `4182` 运行，再执行：
+
+```sh
+CAMERA_PYTHON=/path/to/python MOONFALL_NFC_START=1 MOONFALL_STRAIGHT_LIVE=1 npm start -- --port 4254
+```
+
+把两台车放在对应车道左侧，车头朝右。在管理员控制台点击「检查双车起点」。看到「实车已就绪，可以刷牌」后，用手机刷四张路线牌。大屏按牌面路线显示，实车分别直行 47.8、37.8、37.8 cm。前两段掉头并停稳后才能换段，第三段到点停车。初始路线长度用于计算各段预计用时，实际用时需要现场校准。暂停或停机后，重新摆车并从新一局开始。
+
 实车联调时，先实测并补齐 `config/dual-executor.example.json` 中的标定和车辆参数，保存为本机配置。确认相机服务 `http://127.0.0.1:4182/live-frame` 提供标签定位，两台车的 `/status` 可达。游戏服务添加 `--profile` 指向该配置，执行器使用 `npm run executor -- --live config/dual-executor.local.json ws://127.0.0.1:4264/hardware`。发车前在控制台核对两车定位、朝向、起点和停稳状态。

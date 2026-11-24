@@ -103,10 +103,20 @@
               <h2>联调控制</h2>
               <span id="authority">主控</span>
             </div>
+            <p>
+              <a href="http://127.0.0.1:4182/?control=1" target="_blank" rel="noopener"
+                >顶视相机调试 ↗</a
+              >
+            </p>
             <div id="nfc-start" hidden>
+              <button id="straight-mode" type="button" hidden>只跑虚拟车</button>
               <p><a id="nfc-reader" target="_blank" rel="noopener">手机 NFC 连接地址 ↗</a></p>
               <p id="nfc-progress" role="status"></p>
               <p id="nfc-instructions"></p>
+              <div id="straight-live" hidden>
+                <button id="straight-arm" data-action="straight.arm">检查双车起点</button>
+                <p id="straight-ready" role="status"></p>
+              </div>
             </div>
             <button class="quick-start-primary" data-quick-start>▶ 一键开局</button>
             <p class="quick-start-hint">自动配置并发车，成功后返回赛场</p>

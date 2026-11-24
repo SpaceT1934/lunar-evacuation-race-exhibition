@@ -328,6 +328,9 @@ export class RouteProtocol {
 
 // Ideal simulator used by the game sandbox. No motor driver.
 export class HardwareSimulator extends RouteProtocol {
+  canFinishStage() {
+    return true;
+  }
   tick(dt) {
     this.advanceClock(dt);
     if (this.running && !this.paused) {
@@ -336,6 +339,10 @@ export class HardwareSimulator extends RouteProtocol {
         if (r.phase === 'RUNNING') {
           r.stopped = false;
           let next = Math.min(r.current.route.length_cm, r.s + (2 * dt) / 1000);
+          if (!this.canFinishStage(r)) {
+            const hold = r.stage === 3 ? 4 : 0.05;
+            next = Math.max(r.s, Math.min(next, r.current.route.length_cm - hold));
+          }
           const pending = r.slots[r.stage];
           if (pending !== r.current && pending?.switch_at_cm) {
             const forkS = project(r.current.route, {

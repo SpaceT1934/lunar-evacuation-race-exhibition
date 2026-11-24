@@ -17,7 +17,7 @@ export function resolveCard(id) {
   };
 }
 
-export function createPhoneGateway({ game, drain, advance, port }) {
+export function createPhoneGateway({ game, drain, advance, port, canScan = () => true }) {
   const sessions = new Map();
   const scans = new Map();
   const latestAccepted = new Map();
@@ -38,7 +38,7 @@ export function createPhoneGateway({ game, drain, advance, port }) {
       protocol: 'moonfall-card-scans-v1',
       match_id: game.match,
       game_status: game.status,
-      ready: !!(game.link && game.hello && game.sync),
+      ready: !!(game.link && game.hello && game.sync && canScan()),
       addresses,
       phones: [...sessions.values()]
         .filter((s) => now - s.seen < 10000)
@@ -204,7 +204,7 @@ export function createPhoneGateway({ game, drain, advance, port }) {
           return;
         }
         scans.set(p.scan_id, scan);
-        if (!game.link || !game.hello || !game.sync) {
+        if (!game.link || !game.hello || !game.sync || !canScan()) {
           scan.status = 'rejected';
           scan.message = '拒绝出牌：游戏或硬件尚未就绪';
         } else {

@@ -27,10 +27,12 @@ export class Sandbox {
     profile = null,
     random = Math.random,
     nfcStart = false,
+    canAutoStart = () => true,
   } = {}) {
     this.send = send;
     this.mode = mode;
     this.nfcStart = nfcStart;
+    this.canAutoStart = canAutoStart;
     this.profile = profile;
     this.random = random;
     this.now = 0;
@@ -1102,7 +1104,8 @@ export class Sandbox {
       this.nfcStart &&
       this.mode === 'simulation' &&
       this.status === 'idle' &&
-      this.nfcComplete()
+      this.nfcComplete() &&
+      this.canAutoStart()
     ) {
       try {
         if (!this.configured && !this.nfcConfigRequested) {
